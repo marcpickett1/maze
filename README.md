@@ -7,4 +7,4 @@ maze <your_text>
 ```
 
 Output:
-![](hello_world.gif "20."){:width="200"}
+![](hello_world.gif "20.")
