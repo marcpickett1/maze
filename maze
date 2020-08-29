@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+import random, pygame, sys, imageio, itertools
+from PIL import Image
+from pygifsicle import optimize
+
+PADDING = 8
+SPACING = 2
+S = 10 # Scale
+
+def solveMaze(maze, edges, surf):
+  Y, X, xAt, yAt = len(maze[0]), len(maze), 0, 0
+  # Find the start
+  for yy, xx in itertools.product(range(Y), range(X)):
+    if maze[xx][yy] == 'S': xAt, yAt = xx, yy
+  solveMazeH(maze, edges, xAt, yAt, xAt, yAt, X, Y, surf)
+def solveMazeH(maze, edges, lastX, lastY, xAt, yAt, X, Y, surf):
+  if maze[xAt][yAt] == 'F': return True
+  maze[xAt][yAt] = '..'
+  if lastX > xAt: maze[xAt][yAt] = '.>'
+  elif lastX < xAt: maze[xAt][yAt] = '.<'
+  elif lastY < yAt: maze[xAt][yAt] = '.v'
+  elif lastY > yAt: maze[xAt][yAt] = '.^'
+  drawMaze(maze, edges, surf)
+  # need to take into account edges
+  if edges[xAt][yAt][0] == ' ' and yAt < Y-1 and (maze[xAt][yAt+1] == ' ' or maze[xAt][yAt+1] == 'F'):
+    if solveMazeH(maze, edges, xAt, yAt, xAt, yAt+1, X, Y, surf): return True # Down
+  if edges[xAt][yAt][1] == ' ' and xAt < X-1 and (maze[xAt+1][yAt] == ' ' or maze[xAt+1][yAt] == 'F'):
+    if solveMazeH(maze, edges, xAt, yAt, xAt+1, yAt, X, Y, surf): return True # Right
+  if yAt > 0 and edges[xAt][yAt-1][0] == ' ' and (maze[xAt][yAt-1] == ' ' or maze[xAt][yAt-1] == 'F'):
+    if solveMazeH(maze, edges, xAt, yAt, xAt, yAt-1, X, Y, surf): return True # Up
+  if xAt > 0 and edges[xAt-1][yAt][1] == ' ' and (maze[xAt-1][yAt] == ' ' or maze[xAt-1][yAt] == 'F'):
+    if solveMazeH(maze, edges, xAt, yAt, xAt-1, yAt, X, Y, surf): return True # Left
+  maze[xAt][yAt] = ' '
+  drawMaze(maze, edges, surf)
+
+# Probably a more elegant way to do this.
+def makeMaze(X, Y, grid, surf):
+  maze = [['X']*Y for _ in range(X)]
+  edges = [[['_', '|'] for _ in range(Y)] for _ in range(X)]
+  # Set the pattern
+  startX, startY, finishX, finishY = 1, 1, X-2, Y-2
+  for z, a in enumerate(grid):
+    for i, b in enumerate(a[:-1]):
+      if b == 'O': maze[z][i], edges[z][i][0], edges[z][i][1] = 'O', ' ', ' '
+      elif b == '|': maze[z][i], edges[z][i][1] = 'O', ' '
+      elif b == '_': maze[z][i], edges[z][i][0] = 'O', ' '
+      elif b == 'J': maze[z][i] = 'O'
+      elif b == '>': maze[z][i], edges[z][i][0] = ' ', ' '
+      elif b == 'v': maze[z][i], edges[z][i][1] = ' ', ' '
+      elif b == '<': maze[z][i], edges[z][i-1][0] = ' ', ' '
+      elif b == '^': maze[z][i], edges[z-1][i][1] = ' ', ' '
+      elif b == 'S': startX, startY = z, i # Start!
+      elif b == 'F': finishX, finishY = z, i # Finish!
+  # Make the maze around the pattern
+  allset = list(itertools.product(range(1, X-1), range(1, Y-1)))
+  stillOpen = True
+  while stillOpen > 0:
+    stillOpen = False
+    random.shuffle(allset)
+    for x, y in allset:
+      if maze[x][y] == 'X':
+        opened = []
+        if maze[x+1][y] == ' ': opened.append([x, y, 1])
+        if maze[x-1][y] == ' ': opened.append([x-1, y, 1])
+        if maze[x][y+1] == ' ': opened.append([x, y, 0])
+        if maze[x][y-1] == ' ': opened.append([x, y-1, 0])
+        if opened:
+          edge = random.choice(opened)
+          edges[edge[0]][edge[1]][edge[2]] = ' '
+          maze[x][y] = ' '
+          stillOpen = True
+          drawMaze(maze, edges, surf)
+  maze[startX][startY], maze[finishX][finishY] = 'S', 'F'
+  return maze, edges
+
+def line(surf,C,y1,x1,y2,x2,w): pygame.draw.line(surf, C, (int((y1+.5)*S),int((x1+.5)*S)), (int((y2+.5)*S),int((x2+.5)*S)), w)
+def drawMaze(maze, edges, surf):
+  Y, X, lw = len(maze[0]), len(maze), 1
+  GR, BL, WH, YE, RD = (0,255,0), (0,0,0), (255,255,255), (255,255,0), (255,0,0)
+  pygame.draw.rect(surf, BL, (0,0,Y*S,X*S))
+  line(surf, GR, .5, .5, Y-1.5, .5, lw)
+  line(surf, GR, .5, .5, .5, X-1.5, lw)
+  for yy in range(1, Y-1):
+    for xx in range(1, X-1):
+      if (edges[xx][yy][0] == '_'): line(surf, GR, yy+.5, xx-.5, yy+.5, xx+.5, lw)
+      if (edges[xx][yy][1] == '|'): line(surf, GR, yy-.5, xx+.5, yy+.5, xx+.5, lw)
+  for yy in range(0, Y):
+    for xx in range (0, X):
+      m = maze[xx][yy]
+      if m == 'S': pygame.draw.circle(surf, RD, (int((yy+.5)*S),int((xx+.5)*S)), int(.5*S)-1, 0)
+      if m.startswith('.'):
+        if m[1] == '<': line(surf, WH, yy, xx-1, yy, xx, lw*3)
+        elif m[1] == '>': line(surf, WH, yy, xx+1, yy, xx, lw*3)
+        elif m[1] == 'v': line(surf, WH, yy-1, xx, yy, xx, lw*3)
+        elif m[1] == '^': line(surf, WH, yy+1, xx, yy, xx, lw*3)
+      if m == 'F': pygame.draw.circle(surf, YE, (int((yy+.5)*S),int((xx+.5)*S)), int(.5*S)-2, 0)
+  pygame.display.update()
+  drawMaze.images.append(surf.copy())
+drawMaze.images = []
+
+def generatePostscript(maze, edges, filename):
+  lw = 2
+  outf = open(filename+'.ps', 'w')
+  Y, X = len(maze[0]), len(maze)
+  outf.write('%!\n'+str(lw+.05)+' setlinewidth\n0 0 0 setrgbcolor\n20 20 translate\n')
+  outf.write('newpath '+str(S)+' '+str(S-lw/2)+' moveto '+str(S)+' '+str((Y-1)*S+lw/2)+' lineto stroke\n')
+  outf.write('newpath '+str(S*1-lw/2)+' '+str(S)+' moveto '+str((X-2)*S+lw/2)+' '+str(S)+' lineto stroke\n')
+  for yy in range(1, Y-1):
+    for xx in range(1, X-1):
+      if edges[xx][yy][0] == '_' and (yy!=Y-2 or xx!=X-2): outf.write('newpath '+str(xx*S-lw/2)+' '+str((yy+1)*S)+' moveto '+str((xx+1)*S+lw/2)+' '+str((yy+1)*S)+' lineto stroke\n')
+      if edges[xx][yy][1] == '|': outf.write('newpath '+str((xx+1)*S)+' '+str(yy*S-lw/2)+' moveto '+str((xx+1)*S)+' '+str((yy+1)*S+lw/2)+' lineto stroke\n')
+  outf.write('showpage\n')
+
+# sPacing, Font
+def makename(word, P=2):
+  F = {
+    '_': (5, ('', '', '', '', '', '', '>>>>>')),
+    'a': (5, ('>>>>v', '^   v', '^<<<v', '>>>^v', '^   v', '^   v', '^   >')),
+    'b': (5, ('>>>v', '^  >v', '^   v', '^ v<<', '^ >>v', '^  v<', '^  >>')),
+    'c': (5, ('>>>>v', '^v<<v', '^v ^<', '^v', '^v >v', '^>>^v', '^   >')),
+    'd': (5, ('>>>v', '^  >v', '^   v', '^   v', '^   v', '^ v<<', '^ >>>')),
+    'e': (5, ('>>>>v', '^v<<<', '^>>v', '^v<<', '^>>>v', '^ v<<', '^ >>>')),
+    'f': (5, ('>>>>v', '^v<<<', '^>>v', '^v<<', '^v', '^v', '^>>>>')),
+    'g': (5, ('>>>>v', '^v<<v', '^v ^<', '^v>>v', '^v^<v', '^>>^v', '^   >')),
+    'h': (5, ('>v >v', '^v ^v', '^v ^v', '^>>^v', '^   v', '^   v', '^   >')),
+    'i': (5, ('>>>>v', '^<v<<', ' ^v', ' ^v', ' ^v', '>^>>v', '^   >')),
+    'j': (5, ('>>>>v', '^<<v<', '  ^v', '>v^v', '^v^v', '^>^v', '^  >>')),
+    'k': (4, ('>v', '^v>v', '^>^v', '^v<<', '^>v', '^ >v', '^  >')),
+    'l': (5, ('>v', '^v', '^v', '^v', '^v', '^>>>v', '^   >')),
+    'm': (6, ('>>v>>v', '^ v^ v', '^ v^ v', '^ >^ v', '^    v', '^    v', '^    >')),
+    'n': (5, ('>>v>v', '^ v^v', '^ v^v', '^ v^v', '^ v^v', '^ >^v', '^   >')),
+    'o': (5, ('>>>>v', '^   v', '^   v', '^   v', '^   v', '^<<<v', '>>>^>')),
+    'p': (5, ('>>>v', '^  >v', '^  v<', '^v<<', '^v', '^v', '^>>>>')),
+    'q': (5, ('>>>>v', '^   v', '^   v', '^   v', '^ v<v', '^<<^v', '>>>^>')),
+    'r': (5, ('>>>v', '^  >v', '^   v', '^v<<<', '^>v', '^ >v', '^  >>')),
+    's': (5, (' >>>v', '>^v<<', '^v<', '^>>>v', '^<<<v', '>>>^v', '^   >')),
+    't': (5, ('>>>>v', '^<v<<', ' ^v', ' ^v', ' ^v', ' ^v', '>^>>>')),
+    'u': (5, ('>v >v', '^v ^v', '^v ^v', '^v ^v', '^v ^v', '^>>^v', '^   >')),
+    'v': (4, ('>v>v', '^v^v', '^v^v', '^v^v', '^v^v', '^>^v', '^  >')),
+    'w': (6, ('>v>v>v', '^v^v^v', '^v^v^v', '^v^v^v', '^v^v^v', '^>^>^v', '^    >')),
+    'x': (5, ('>v >v', '^v ^v', '^>>^v', '^<v<<', ' ^>v', '>^>>v', '^   >')),
+    'y': (5, ('>v >v', '^v ^v', '^>>^v', '^<<<v', '>v ^v', '^>>^v', '^   >')),
+    'z': (5, ('>>>>v', '^<<^v', ' >^v<', ' ^v<', ' ^v', '>^>>v', '^   >'))}
+  H = max(len(x[1]) for x in F.values())
+  lines = [(' '*P+(''.join([(' ' if i+1<H else '>')*P+F[c][1][i].ljust(F[c][0]) for c in word]))+' '*P) for i in range(H)]
+  return ['']*6 + lines + ['']
+
+def main():
+  random.seed(63)
+  phrase = 'hello_world' if len(sys.argv) < 2 else sys.argv[1]
+  # Get the sizes
+  mazeSizeX, mazeSizeY = 0, 0
+  grid = makename('_'+phrase+'_', SPACING)
+  for j, a in enumerate(grid):
+    for i, b in enumerate(a[:-1]):
+      if b not in ' \n':
+        if i > mazeSizeY: mazeSizeY = i
+        if j > mazeSizeX: mazeSizeX = j
+  mazeSizeX += PADDING
+  mazeSizeY += PADDING
+  surf = pygame.display.set_mode([mazeSizeY*S, mazeSizeX*S])
+  maze, edges = makeMaze(mazeSizeX, mazeSizeY, grid, surf)
+  drawMaze(maze, edges, surf)
+  generatePostscript(maze, edges, phrase)
+  solveMaze(maze, edges, surf)
+  drawMaze(maze, edges, surf)
+  # Make the gif.
+  a = pygame.display.get_surface()
+  images = []
+  for b in drawMaze.images:
+    a.blit(b, (0,0))
+    c = pygame.image.tostring(b, 'RGBA')
+    d = Image.frombytes("RGBA", b.get_size(), c)
+    images.append(d)
+    pygame.display.update()
+  imageio.mimsave(phrase+ '.gif', images, duration=0.01)
+  optimize(phrase+'.gif')
+
+if __name__ == "__main__": main()
